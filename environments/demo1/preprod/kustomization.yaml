@@ -1,8 +1,8 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - ../../argocd/base
-namePrefix: demo2-non-prod-preprod-
+  - ../../../argocd/base
+namePrefix: demo1-non-prod-preprod-
 patches:
   - patch: |-
       apiVersion: argoproj.io/v1alpha1
@@ -13,14 +13,14 @@ patches:
       spec:
         template:
           metadata:
-            name: demo2-non-prod-preprod-{{ .name }}
+            name: demo1-non-prod-preprod-{{ .name }}
           spec:
             destination:
-              namespace: demo2-non-prod-preprod
+              namespace: demo1-non-prod-preprod
             source:
               helm:
                 valueFiles:
-                - ../../demo2-non-prod/preprod/values/{{ .valuesFile }}
+                - ../../environments/demo1/preprod/values/{{ .valuesFile }}
   - patch: |-
       apiVersion: argoproj.io/v1alpha1
       kind: Application
@@ -29,11 +29,11 @@ patches:
         namespace: argocd
       spec:
         destination:
-          namespace: demo2-non-prod-preprod
+          namespace: demo1-non-prod-preprod
         source:
           helm:
             valueFiles:
-            - ../../demo2-non-prod/preprod/values/common-concerns.yaml
+            - ../../environments/demo1/preprod/values/common-concerns.yaml
   - patch: |-
       apiVersion: argoproj.io/v1alpha1
       kind: Application
@@ -42,8 +42,8 @@ patches:
         namespace: argocd
       spec:
         destination:
-          namespace: demo2-non-prod-preprod
+          namespace: demo1-non-prod-preprod
         source:
           helm:
             valueFiles:
-            - ../../demo2-non-prod/preprod/values/storybook.yaml
+            - ../../environments/demo1/preprod/values/storybook.yaml

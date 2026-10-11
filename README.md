@@ -17,18 +17,21 @@ argocd/
     applications.yaml
     argo-common-concerns.yaml
     argo-storybook.yaml
-demo1-non-prod/
-  qa/
-    kustomization.yaml
-    values/
-  preprod/
-demo1-prod/
-  prod/
-demo2-non-prod/
-  qa/
-  preprod/
-demo2-prod/
-  prod/
+environments/
+  demo1/
+    qa/
+      kustomization.yaml
+      values/
+    preprod/
+      kustomization.yaml
+      values/
+    prod/
+      kustomization.yaml
+      values/
+  demo2/
+    qa/
+    preprod/
+    prod/
 ```
 
 Each chart includes `Chart.yaml`, `values.yaml`, and templates. The shared `argocd/base` contains:
@@ -41,7 +44,7 @@ Every environment/stage folder contains a `kustomization.yaml` overlay and `valu
 
 [Kustomize](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/kustomization/) assembles the Argo CD resources; Argo CD still uses Helm to render each .NET workload. Kustomize is bundled with kubectl; these overlays were verified with Kustomize v5.7.1 in kubectl v1.34.1.
 
-Non-prod environments each contain `qa` and `preprod`; production environments each contain only `prod`. All six combinations target the same local cluster, using separate namespaces such as `demo1-non-prod-qa` and `demo1-prod-prod`. Non-prod uses one replica; prod uses two. These folders are examples, not a complete production cluster configuration.
+The `environments` folder stores each demo's Argo CD overlays and Helm values. Each demo contains exactly three independently deployable environment overlays: `qa`, `preprod`, and `prod`. All six combinations target the same local cluster, using separate namespaces such as `demo1-non-prod-qa` and `demo1-prod-prod`. QA and preprod use one replica; prod uses two. These folders are examples, not a complete production cluster configuration.
 
 ## Prerequisites
 
@@ -158,7 +161,7 @@ Argo CD reads Git from inside Kubernetes; it cannot read this local Windows fold
 Commit and push the files to that repository:
 
 ```powershell
-git add README.md charts argocd demo1-non-prod demo1-prod demo2-non-prod demo2-prod
+git add -A
 git commit -m "Add local Argo CD example and .NET Helm charts"
 git push -u origin main
 ```
@@ -203,14 +206,14 @@ Use the actual connection error to choose the next step:
 
 ## 4. Deploy an environment
 
-Start with demo1 non-prod qa:
+Start with demo1 QA:
 
 ```powershell
-kubectl kustomize demo1-non-prod/qa
-kubectl apply -k demo1-non-prod/qa
+kubectl kustomize environments/demo1/qa
+kubectl apply -k environments/demo1/qa
 kubectl get deployments,pods,services -n demo1-non-prod-qa
 
-kubectl apply -k demo2-non-prod/qa
+kubectl apply -k environments/demo2/qa
 kubectl get deployments,pods,services -n demo2-non-prod-qa
 
 kubectl get applicationsets,applications -n argocd
@@ -218,24 +221,23 @@ kubectl get applicationsets,applications -n argocd
 
 The overlay creates the ApplicationSet and both Applications in the `argocd` namespace. The ApplicationSet creates `demo1-non-prod-qa-service`; the other resources are `demo1-non-prod-qa-common-concerns` and `demo1-non-prod-qa-storybook`. Argo CD creates the destination namespace and automatically syncs, prunes removed resources, and corrects drift. Initial reconciliation may take a few minutes.
 
-The environment folders and resource prefixes now use `demo1` and `demo2`. Applying these overlays creates applications and destination namespaces with the new names. Any previously deployed resources with the old prefixes remain in Kubernetes until explicitly removed. Confirm the new applications are healthy before retiring the old ones.
+Each demo under `environments/` contains `qa`, `preprod`, and `prod` directly, while existing application names and namespaces are preserved. Existing names such as `demo1-non-prod-qa` are retained for compatibility even though the `non-prod` folder is removed. Commit and push the move first so Argo CD can read the new values paths, then apply each affected overlay. This updates the existing Argo CD resources in place.
 
 Production uses these overlays:
 
 ```powershell
-kubectl apply -k demo1-prod/prod
-kubectl apply -k demo2-prod/prod
+kubectl apply -k environments/demo1/prod
+kubectl apply -k environments/demo2/prod
 ```
 
-Production resources now use names such as `demo1-prod-prod-services` and destination namespace `demo1-prod-prod`. If you previously deployed the old production qa/preprod overlays, their resources remain in Kubernetes until you explicitly remove them; applying the new prod overlay creates a separate set of applications. Confirm the new production applications are healthy before retiring the old ones.
+Production preserves resource names such as `demo1-prod-prod-services` and destination namespace `demo1-prod-prod` for compatibility. Applying `environments/demo1/prod` deploys only demo1 production; applying `environments/demo1/qa` deploys only demo1 QA. Each overlay has its own ApplicationSet and Applications, which can be synced separately in Argo CD. The demo root is an organizational folder, not a deployable overlay.
 
 To apply all six combinations explicitly:
 
 ```powershell
-foreach ($environment in @('demo1-non-prod', 'demo1-prod', 'demo2-non-prod', 'demo2-prod')) {
-    $stages = if ($environment -like '*-non-prod') { @('qa', 'preprod') } else { @('prod') }
-    foreach ($stage in $stages) {
-        kubectl apply -k "$environment/$stage"
+foreach ($demo in @('demo1', 'demo2')) {
+    foreach ($environment in @('qa', 'preprod', 'prod')) {
+        kubectl apply -k "environments/$demo/$environment"
     }
 }
 ```
@@ -258,9 +260,9 @@ Open http://localhost:8081, http://localhost:8082, and http://localhost:8083. In
 
 ## Customize the applications
 
-Chart defaults live in `charts/<chart>/values.yaml`; environment overrides live in `<environment>/<stage>/values/<chart>.yaml`. Argo CD resolves each `valueFiles` path relative to its chart folder.
+Chart defaults live in `charts/<chart>/values.yaml`; environment overrides live in `environments/<demo>/<environment>/values/<chart>.yaml`. Argo CD resolves each `valueFiles` path relative to its chart folder.
 
-For example, replace the sample image in `demo1-non-prod/qa/values/service.yaml`:
+For example, replace the sample image in `environments/demo1/qa/values/service.yaml`:
 
 ```yaml
 image:
@@ -276,24 +278,23 @@ TCP startup, readiness, and liveness probes are provided so the sample does not 
 
 To deploy another service from the same chart in all environments, add a distinct `name`, `releaseName`, and `valuesFile` to the list in `argocd/base/applications.yaml` and create its values file in each environment. Unique release names keep Deployments and Services distinct within the namespace. Apply the affected overlays again. See the [ApplicationSet list generator](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-List/) and [Argo CD Helm values](https://argo-cd.readthedocs.io/en/stable/user-guide/helm/) documentation.
 
-To add another environment, copy an existing stage folder with its values, then edit `namePrefix` and the small patches in its `kustomization.yaml`: set its destination namespaces, ApplicationSet template name, and values paths. Update `APP_ENVIRONMENT` in the values files. Render with `kubectl kustomize <environment>/<stage>` before applying.
+To add another environment, copy an existing stage folder with its values, then edit `namePrefix` and the small patches in its `kustomization.yaml`: set its destination namespaces, ApplicationSet template name, and values paths. Update `APP_ENVIRONMENT` in the values files. Render with `kubectl kustomize <overlay-path>` before applying.
 
 ## Validate locally
 
 ```powershell
 foreach ($chart in @('service', 'common-concerns', 'storybook')) {
     helm lint "charts/$chart" --strict
-    helm template $chart "charts/$chart" --namespace demo1-non-prod-qa -f "demo1-non-prod/qa/values/$chart.yaml"
+    helm template $chart "charts/$chart" --namespace demo1-non-prod-qa -f "environments/demo1/qa/values/$chart.yaml"
 }
 ```
 
 To render every overlay locally without contacting Kubernetes:
 
 ```powershell
-foreach ($environment in @('demo1-non-prod', 'demo1-prod', 'demo2-non-prod', 'demo2-prod')) {
-    $stages = if ($environment -like '*-non-prod') { @('qa', 'preprod') } else { @('prod') }
-    foreach ($stage in $stages) {
-        kubectl kustomize "$environment/$stage"
+foreach ($demo in @('demo1', 'demo2')) {
+    foreach ($environment in @('qa', 'preprod', 'prod')) {
+        kubectl kustomize "environments/$demo/$environment"
     }
 }
 ```
@@ -301,7 +302,7 @@ foreach ($environment in @('demo1-non-prod', 'demo1-prod', 'demo2-non-prod', 'de
 To check an overlay's Argo resources against an installed cluster's CRDs:
 
 ```powershell
-kubectl apply --dry-run=server -k demo1-non-prod/qa
+kubectl apply --dry-run=server -k environments/demo1/qa
 ```
 
 ## Troubleshooting and cleanup
