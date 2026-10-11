@@ -86,6 +86,62 @@ argocd login localhost:8080 --username admin --insecure
 argocd account update-password
 ```
 
+## 2a. Configure a trusted local TLS certificate
+
+Argo CD already enables HTTPS using a generated self-signed certificate. The certificate below secures browser/CLI access to `https://localhost:8080`. Git SSH authentication uses separate keys and host verification; replacing this TLS certificate will not fix an SSH handshake or authentication failure. See [Argo CD TLS configuration](https://argo-cd.readthedocs.io/en/stable/operator-manual/tls/).
+
+### Create a certificate trusted by Windows
+
+Install [mkcert](https://github.com/FiloSottile/mkcert#installation) using one of its documented Windows installation methods. For example, if Chocolatey is already installed, run this in an administrator PowerShell:
+
+```powershell
+choco install mkcert
+```
+
+Reopen PowerShell so `mkcert` is on PATH. Install its local development certificate authority, then generate a certificate covering localhost and the loopback addresses. Keep the files outside this repository:
+
+```powershell
+mkcert -install
+$tlsDirectory = Join-Path $env:USERPROFILE '.argocd-local/tls'
+New-Item -ItemType Directory -Path $tlsDirectory -Force | Out-Null
+$certificatePath = Join-Path $tlsDirectory 'localhost.pem'
+$privateKeyPath = Join-Path $tlsDirectory 'localhost-key.pem'
+mkcert -cert-file $certificatePath -key-file $privateKeyPath localhost 127.0.0.1 ::1
+```
+
+Approve the Windows trust-store prompt if shown. This certificate is for local development. Keep its private key and mkcert's CA private key out of Git.
+
+### Install the certificate in Argo CD
+
+Confirm you are targeting your local cluster, then create or update the TLS Secret:
+
+```powershell
+kubectl config current-context
+kubectl create secret tls argocd-server-tls -n argocd --cert="$certificatePath" --key="$privateKeyPath" --dry-run=client -o yaml | kubectl apply -f -
+```
+
+The Secret contains `tls.crt` and `tls.key`. Argo CD's API server automatically reloads this Secret; a restart is normally unnecessary. Keep server-side TLS enabled for the existing `8080:443` port-forward.
+
+Keep this running in a separate terminal:
+
+```powershell
+kubectl port-forward -n argocd svc/argocd-server 8080:443
+```
+
+Reopen your browser at https://localhost:8080. With the Argo CD CLI installed, log in without the earlier `--insecure` option:
+
+```powershell
+argocd login localhost:8080 --username admin
+```
+
+To check certificate trust from Windows without bypassing verification:
+
+```powershell
+curl.exe --head https://localhost:8080
+```
+
+An HTTP response without a certificate validation error confirms the TLS connection. If trust fails, restart the browser/terminal and confirm `mkcert -install` ran on this machine. If the server still presents its old certificate, allow time for Secret propagation and inspect the certificate issuer in the browser. A different hostname needs a matching certificate name.
+
 ## 3. Publish the repository
 
 Argo CD reads Git from inside Kubernetes; it cannot read this local Windows folder. Every manifest points to `https://github.com/VStefanov/gitops-example.git` and branch `main`, based on this repository's origin. If you use another repository or branch, edit `repoURL` and `targetRevision` in all 24 Argo CD manifests first.
@@ -102,6 +158,40 @@ If your current branch is different, switch to/create `main` before pushing, or 
 
 For a private repository, use **Settings > Repositories > Connect Repo** in the Argo CD UI to configure credentials for the HTTPS URL. Your local Git SSH credentials are not inherited by Argo CD. Keep tokens and private keys out of this repository.
 
+### Connect this repository over SSH instead
+
+The current manifests use HTTPS. If you prefer SSH, configure the SSH repository and change every manifest's `repoURL` to `git@github.com:VStefanov/gitops-example.git`. Credentials for an SSH URL do not authenticate the existing HTTPS URL. Alternatively, keep HTTPS and configure a GitHub token with read access in the UI.
+
+For SSH, create a dedicated deploy key outside the repository:
+
+```powershell
+$sshDirectory = Join-Path $env:USERPROFILE '.ssh'
+New-Item -ItemType Directory -Path $sshDirectory -Force | Out-Null
+$deployKeyPath = Join-Path $sshDirectory 'argocd-gitops-example'
+ssh-keygen -t ed25519 -C 'argocd-gitops-example' -f $deployKeyPath
+```
+
+Use an unused filename. When prompted for a passphrase, press Enter twice: Argo CD needs a key it can use unattended. In GitHub, open this repository's **Settings > Deploy keys > Add deploy key**, paste the contents of `argocd-gitops-example.pub`, and leave write access disabled.
+
+In Argo CD, open **Settings > Repositories > Connect Repo**, select SSH, enter `git@github.com:VStefanov/gitops-example.git`, and paste the **private** key from `argocd-gitops-example`. Preserve its header, footer, and line breaks. Alternatively, after CLI login:
+
+```powershell
+argocd repo add git@github.com:VStefanov/gitops-example.git --ssh-private-key-path "$deployKeyPath"
+argocd repo list
+```
+
+For SSH host verification, check **Settings > Certificates** for the GitHub SSH host entries. If missing or outdated, add trusted entries through the UI or `argocd cert add-ssh --from <verified-known-hosts-file>`. Verify fingerprints against [GitHub's published SSH fingerprints](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/githubs-ssh-key-fingerprints); do not blindly trust `ssh-keyscan` output or disable host verification. See [Argo CD private repository configuration](https://argo-cd.readthedocs.io/en/stable/user-guide/private-repositories/).
+
+Use the actual connection error to choose the next step:
+
+| Error | What to check |
+| --- | --- |
+| `x509: certificate signed by unknown authority` connecting to localhost | The local TLS certificate and Windows CA trust from section 2a. |
+| `x509` error fetching an HTTPS Git repository | The Git server's certificate/CA trust inside Argo CD; a custom Git CA can be added with `argocd cert add-tls <git-hostname> --from <ca.pem>`. |
+| `Permission denied (publickey)` or `unable to authenticate` | The private deploy key configured in Argo CD and its public key registered for this GitHub repository. |
+| `knownhosts`, unknown host key, or host key mismatch | Verified Git SSH host entries in Argo CD. |
+| SSH timeout, DNS failure, or connection refused | Network access from the Argo CD pods to GitHub on SSH port 22. |
+
 ## 4. Deploy an environment
 
 Start with env1 non-prod qa:
@@ -110,8 +200,16 @@ Start with env1 non-prod qa:
 kubectl apply -n argocd -f env1-non-prod/qa/applications.yaml
 kubectl apply -n argocd -f env1-non-prod/qa/argo-common-concerns.yaml
 kubectl apply -n argocd -f env1-non-prod/qa/argo-storybook.yaml
-kubectl get applicationsets,applications -n argocd
+
 kubectl get deployments,pods,services -n env1-non-prod-qa
+
+kubectl apply -n argocd -f env2-non-prod/qa/applications.yaml
+kubectl apply -n argocd -f env2-non-prod/qa/argo-common-concerns.yaml
+kubectl apply -n argocd -f env2-non-prod/qa/argo-storybook.yaml
+
+kubectl get deployments,pods,services -n env2-non-prod-qa
+
+kubectl get applicationsets,applications -n argocd
 ```
 
 The ApplicationSet creates `env1-non-prod-qa-service`; the other files create `env1-non-prod-qa-common-concerns` and `env1-non-prod-qa-storybook`. Argo CD creates the destination namespace and automatically syncs, prunes removed resources, and corrects drift. Initial reconciliation may take a few minutes.
