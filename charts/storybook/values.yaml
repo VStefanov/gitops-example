@@ -1,0 +1,44 @@
+# Runnable ASP.NET Core sample. Replace with your application's published image.
+replicaCount: 1
+image:
+  repository: mcr.microsoft.com/dotnet/samples
+  tag: aspnetapp-10.0
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+containerPort: 8080
+aspnetcoreEnvironment: Development
+env: {}
+# Reference pre-existing Secrets/ConfigMaps; do not commit credentials.
+envFrom: []
+service:
+  type: ClusterIP
+  port: 80
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+# TCP probes work with the sample and apps without a /health endpoint.
+# Replace with httpGet probes once your application exposes health endpoints.
+startupProbe:
+  tcpSocket:
+    port: http
+  failureThreshold: 30
+  periodSeconds: 5
+readinessProbe:
+  tcpSocket:
+    port: http
+  periodSeconds: 10
+livenessProbe:
+  tcpSocket:
+    port: http
+  periodSeconds: 20
+podAnnotations: {}
+nodeSelector:
+  kubernetes.io/os: linux
+tolerations: []
+affinity: {}

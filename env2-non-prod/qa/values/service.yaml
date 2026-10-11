@@ -1,0 +1,4 @@
+replicaCount: 1
+aspnetcoreEnvironment: Development
+env:
+  APP_ENVIRONMENT: env2-non-prod-qa

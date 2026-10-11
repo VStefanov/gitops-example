@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: env1-non-prod-qa-services
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - list:
+        elements:
+          - name: service
+            releaseName: service
+            valuesFile: service.yaml
+  template:
+    metadata:
+      name: 'env1-non-prod-qa-{{ .name }}'
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/VStefanov/gitops-example.git
+        targetRevision: main
+        path: charts/service
+        helm:
+          releaseName: '{{ .releaseName }}'
+          valueFiles:
+            - '../../env1-non-prod/qa/values/{{ .valuesFile }}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: env1-non-prod-qa
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
