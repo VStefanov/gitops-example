@@ -1,0 +1,4 @@
+replicaCount: 1
+aspnetcoreEnvironment: Development
+env:
+  APP_ENVIRONMENT: demo1-non-prod-qa

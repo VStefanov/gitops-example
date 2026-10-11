@@ -17,17 +17,17 @@ argocd/
     applications.yaml
     argo-common-concerns.yaml
     argo-storybook.yaml
-env1-non-prod/
+demo1-non-prod/
   qa/
     kustomization.yaml
     values/
   preprod/
-env1-prod/
+demo1-prod/
   prod/
-env2-non-prod/
+demo2-non-prod/
   qa/
   preprod/
-env2-prod/
+demo2-prod/
   prod/
 ```
 
@@ -41,7 +41,7 @@ Every environment/stage folder contains a `kustomization.yaml` overlay and `valu
 
 [Kustomize](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/kustomization/) assembles the Argo CD resources; Argo CD still uses Helm to render each .NET workload. Kustomize is bundled with kubectl; these overlays were verified with Kustomize v5.7.1 in kubectl v1.34.1.
 
-Non-prod environments each contain `qa` and `preprod`; production environments each contain only `prod`. All six combinations target the same local cluster, using separate namespaces such as `env1-non-prod-qa` and `env1-prod-prod`. Non-prod uses one replica; prod uses two. These folders are examples, not a complete production cluster configuration.
+Non-prod environments each contain `qa` and `preprod`; production environments each contain only `prod`. All six combinations target the same local cluster, using separate namespaces such as `demo1-non-prod-qa` and `demo1-prod-prod`. Non-prod uses one replica; prod uses two. These folders are examples, not a complete production cluster configuration.
 
 ## Prerequisites
 
@@ -158,7 +158,7 @@ Argo CD reads Git from inside Kubernetes; it cannot read this local Windows fold
 Commit and push the files to that repository:
 
 ```powershell
-git add README.md charts argocd env1-non-prod env1-prod env2-non-prod env2-prod
+git add README.md charts argocd demo1-non-prod demo1-prod demo2-non-prod demo2-prod
 git commit -m "Add local Argo CD example and .NET Helm charts"
 git push -u origin main
 ```
@@ -203,36 +203,36 @@ Use the actual connection error to choose the next step:
 
 ## 4. Deploy an environment
 
-Start with env1 non-prod qa:
+Start with demo1 non-prod qa:
 
 ```powershell
-kubectl kustomize env1-non-prod/qa
-kubectl apply -k env1-non-prod/qa
-kubectl get deployments,pods,services -n env1-non-prod-qa
+kubectl kustomize demo1-non-prod/qa
+kubectl apply -k demo1-non-prod/qa
+kubectl get deployments,pods,services -n demo1-non-prod-qa
 
-kubectl apply -k env2-non-prod/qa
-kubectl get deployments,pods,services -n env2-non-prod-qa
+kubectl apply -k demo2-non-prod/qa
+kubectl get deployments,pods,services -n demo2-non-prod-qa
 
 kubectl get applicationsets,applications -n argocd
 ```
 
-The overlay creates the ApplicationSet and both Applications in the `argocd` namespace. The ApplicationSet creates `env1-non-prod-qa-service`; the other resources are `env1-non-prod-qa-common-concerns` and `env1-non-prod-qa-storybook`. Argo CD creates the destination namespace and automatically syncs, prunes removed resources, and corrects drift. Initial reconciliation may take a few minutes.
+The overlay creates the ApplicationSet and both Applications in the `argocd` namespace. The ApplicationSet creates `demo1-non-prod-qa-service`; the other resources are `demo1-non-prod-qa-common-concerns` and `demo1-non-prod-qa-storybook`. Argo CD creates the destination namespace and automatically syncs, prunes removed resources, and corrects drift. Initial reconciliation may take a few minutes.
 
-If you already applied the original files, run `kubectl apply -k` for those same environment folders. The rendered resource names and specifications are preserved, so this updates the existing resources in place. No deletion or recreation is required.
+The environment folders and resource prefixes now use `demo1` and `demo2`. Applying these overlays creates applications and destination namespaces with the new names. Any previously deployed resources with the old prefixes remain in Kubernetes until explicitly removed. Confirm the new applications are healthy before retiring the old ones.
 
 Production uses these overlays:
 
 ```powershell
-kubectl apply -k env1-prod/prod
-kubectl apply -k env2-prod/prod
+kubectl apply -k demo1-prod/prod
+kubectl apply -k demo2-prod/prod
 ```
 
-Production resources now use names such as `env1-prod-prod-services` and destination namespace `env1-prod-prod`. If you previously deployed the old production qa/preprod overlays, their resources remain in Kubernetes until you explicitly remove them; applying the new prod overlay creates a separate set of applications. Confirm the new production applications are healthy before retiring the old ones.
+Production resources now use names such as `demo1-prod-prod-services` and destination namespace `demo1-prod-prod`. If you previously deployed the old production qa/preprod overlays, their resources remain in Kubernetes until you explicitly remove them; applying the new prod overlay creates a separate set of applications. Confirm the new production applications are healthy before retiring the old ones.
 
 To apply all six combinations explicitly:
 
 ```powershell
-foreach ($environment in @('env1-non-prod', 'env1-prod', 'env2-non-prod', 'env2-prod')) {
+foreach ($environment in @('demo1-non-prod', 'demo1-prod', 'demo2-non-prod', 'demo2-prod')) {
     $stages = if ($environment -like '*-non-prod') { @('qa', 'preprod') } else { @('prod') }
     foreach ($stage in $stages) {
         kubectl apply -k "$environment/$stage"
@@ -249,9 +249,9 @@ Chart and values changes take effect after committing and pushing. Changes to th
 Keep each port-forward running in a separate terminal:
 
 ```powershell
-kubectl port-forward -n env1-non-prod-qa svc/service 8081:80
-kubectl port-forward -n env1-non-prod-qa svc/common-concerns 8082:80
-kubectl port-forward -n env1-non-prod-qa svc/storybook 8083:80
+kubectl port-forward -n demo1-non-prod-qa svc/service 8081:80
+kubectl port-forward -n demo1-non-prod-qa svc/common-concerns 8082:80
+kubectl port-forward -n demo1-non-prod-qa svc/storybook 8083:80
 ```
 
 Open http://localhost:8081, http://localhost:8082, and http://localhost:8083. Initially all three show the ASP.NET Core sample.
@@ -260,7 +260,7 @@ Open http://localhost:8081, http://localhost:8082, and http://localhost:8083. In
 
 Chart defaults live in `charts/<chart>/values.yaml`; environment overrides live in `<environment>/<stage>/values/<chart>.yaml`. Argo CD resolves each `valueFiles` path relative to its chart folder.
 
-For example, replace the sample image in `env1-non-prod/qa/values/service.yaml`:
+For example, replace the sample image in `demo1-non-prod/qa/values/service.yaml`:
 
 ```yaml
 image:
@@ -283,14 +283,14 @@ To add another environment, copy an existing stage folder with its values, then 
 ```powershell
 foreach ($chart in @('service', 'common-concerns', 'storybook')) {
     helm lint "charts/$chart" --strict
-    helm template $chart "charts/$chart" --namespace env1-non-prod-qa -f "env1-non-prod/qa/values/$chart.yaml"
+    helm template $chart "charts/$chart" --namespace demo1-non-prod-qa -f "demo1-non-prod/qa/values/$chart.yaml"
 }
 ```
 
 To render every overlay locally without contacting Kubernetes:
 
 ```powershell
-foreach ($environment in @('env1-non-prod', 'env1-prod', 'env2-non-prod', 'env2-prod')) {
+foreach ($environment in @('demo1-non-prod', 'demo1-prod', 'demo2-non-prod', 'demo2-prod')) {
     $stages = if ($environment -like '*-non-prod') { @('qa', 'preprod') } else { @('prod') }
     foreach ($stage in $stages) {
         kubectl kustomize "$environment/$stage"
@@ -301,7 +301,7 @@ foreach ($environment in @('env1-non-prod', 'env1-prod', 'env2-non-prod', 'env2-
 To check an overlay's Argo resources against an installed cluster's CRDs:
 
 ```powershell
-kubectl apply --dry-run=server -k env1-non-prod/qa
+kubectl apply --dry-run=server -k demo1-non-prod/qa
 ```
 
 ## Troubleshooting and cleanup
@@ -309,8 +309,8 @@ kubectl apply --dry-run=server -k env1-non-prod/qa
 If an application reports a comparison error, check that the Git branch is pushed, the repo URL is accessible, and the values file exists. For `ImagePullBackOff`, check the image/tag and registry credentials. For pods that do not become ready, inspect:
 
 ```powershell
-kubectl describe pods -n env1-non-prod-qa
-kubectl logs -n env1-non-prod-qa deployment/service
+kubectl describe pods -n demo1-non-prod-qa
+kubectl logs -n demo1-non-prod-qa deployment/service
 kubectl get applications -n argocd
 kubectl logs -n argocd deployment/argocd-applicationset-controller
 ```

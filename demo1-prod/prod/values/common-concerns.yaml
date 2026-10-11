@@ -1,0 +1,4 @@
+replicaCount: 2
+aspnetcoreEnvironment: Production
+env:
+  APP_ENVIRONMENT: demo1-prod-prod

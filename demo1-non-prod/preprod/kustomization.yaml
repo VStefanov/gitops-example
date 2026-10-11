@@ -1,0 +1,49 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../argocd/base
+namePrefix: demo1-non-prod-preprod-
+patches:
+  - patch: |-
+      apiVersion: argoproj.io/v1alpha1
+      kind: ApplicationSet
+      metadata:
+        name: services
+        namespace: argocd
+      spec:
+        template:
+          metadata:
+            name: demo1-non-prod-preprod-{{ .name }}
+          spec:
+            destination:
+              namespace: demo1-non-prod-preprod
+            source:
+              helm:
+                valueFiles:
+                - ../../demo1-non-prod/preprod/values/{{ .valuesFile }}
+  - patch: |-
+      apiVersion: argoproj.io/v1alpha1
+      kind: Application
+      metadata:
+        name: common-concerns
+        namespace: argocd
+      spec:
+        destination:
+          namespace: demo1-non-prod-preprod
+        source:
+          helm:
+            valueFiles:
+            - ../../demo1-non-prod/preprod/values/common-concerns.yaml
+  - patch: |-
+      apiVersion: argoproj.io/v1alpha1
+      kind: Application
+      metadata:
+        name: storybook
+        namespace: argocd
+      spec:
+        destination:
+          namespace: demo1-non-prod-preprod
+        source:
+          helm:
+            valueFiles:
+            - ../../demo1-non-prod/preprod/values/storybook.yaml

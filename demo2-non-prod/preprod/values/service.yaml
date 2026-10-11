@@ -1,0 +1,4 @@
+replicaCount: 1
+aspnetcoreEnvironment: Staging
+env:
+  APP_ENVIRONMENT: demo2-non-prod-preprod
