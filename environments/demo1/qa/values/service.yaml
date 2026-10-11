@@ -1,4 +1,9 @@
+# Container version for this application in this environment only.
+# Promote releases by changing image.tag here, then committing and pushing.
 replicaCount: 1
 aspnetcoreEnvironment: Development
 env:
   APP_ENVIRONMENT: demo1-non-prod-qa
+image:
+  repository: mcr.microsoft.com/dotnet/samples
+  tag: aspnetapp-10.0

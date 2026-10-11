@@ -270,7 +270,47 @@ image:
   tag: "1.0.0"
 ```
 
-The image must contain a published application, not just the empty .NET runtime. Configure it to listen on the chart's `containerPort` (8080 by default). The chart sets `ASPNETCORE_HTTP_PORTS` and `ASPNETCORE_ENVIRONMENT`. Use immutable image tags/digests for real releases; the sample's version tag can change upstream.
+The image must contain a published application, not just the empty .NET runtime. Configure it to listen on the chart's `containerPort` (8080 by default). The chart sets `ASPNETCORE_HTTP_PORTS` and `ASPNETCORE_ENVIRONMENT`. Use immutable image tags for real releases; the sample's version tag can change upstream.
+
+### Deploy container versions independently
+
+Each of the 18 environment values files explicitly defines its own `image.repository` and `image.tag`. All start with `mcr.microsoft.com/dotnet/samples:aspnetapp-10.0` to preserve the existing deployment. Replace these with your own published application images when ready. Changing the chart's default image no longer changes environments that explicitly override it.
+
+For example, after publishing your service images, demo1 could run:
+
+| Environment | Values file | Service image tag |
+| --- | --- | --- |
+| QA | `environments/demo1/qa/values/service.yaml` | `1.2.0` |
+| Preprod | `environments/demo1/preprod/values/service.yaml` | `1.1.0` |
+| Prod | `environments/demo1/prod/values/service.yaml` | `1.0.0` |
+
+These are example versions for your own image repository, not tags for Microsoft's sample image. The other applications and demo2 have their own versions in their respective values files.
+
+To release service version `1.2.0` to demo1 QA only, set this in `environments/demo1/qa/values/service.yaml`, retaining its other settings:
+
+```yaml
+image:
+  repository: ghcr.io/your-organization/service
+  tag: "1.2.0"
+```
+
+The repository and tag must exist and be accessible from Kubernetes. Publish a new tag for each release rather than overwriting an existing tag or using `latest`.
+
+Commit and push only that environment's version change:
+
+```powershell
+git add environments/demo1/qa/values/service.yaml
+git commit -m "Release service 1.2.0 to demo1 QA"
+git push origin main
+```
+
+With the existing automated sync policy, Argo CD picks up the change and rolls out only the demo1 QA service. You can also refresh and sync `demo1-non-prod-qa-service` in the UI. A values-only version change does not require `kubectl apply -k` again once the overlay is deployed. QA, preprod, and prod can track the same Git branch while using different image tags.
+
+After validating QA, copy the same repository and tag to `environments/demo1/preprod/values/service.yaml`, commit, and push. After validating preprod, repeat for `environments/demo1/prod/values/service.yaml`. Each promotion is a separate Git change; promotion is not automatic. Update `common-concerns.yaml` or `storybook.yaml` separately to release those applications.
+
+To roll back, restore the previous image tag in the affected environment values file and commit and push that change. The previous image must still be available in the registry.
+
+The container version is `image.tag`. Helm's `Chart.yaml` `version` describes the chart package, and `appVersion` is chart metadata; neither selects the deployed container image in these templates.
 
 Set `imagePullSecrets` to reference a registry Secret already created in each destination namespace. Use `envFrom` for existing Secrets/ConfigMaps; `env` is for non-secret values. ASP.NET Core options can use double underscores, e.g. `Logging__LogLevel__Default: Information`.
 
