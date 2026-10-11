@@ -1,20 +1,21 @@
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: env2-non-prod-qa-services
+  name: services
   namespace: argocd
 spec:
   goTemplate: true
-  goTemplateOptions: ["missingkey=error"]
+  goTemplateOptions:
+  - missingkey=error
   generators:
-    - list:
-        elements:
-          - name: service
-            releaseName: service
-            valuesFile: service.yaml
+  - list:
+      elements:
+      - name: service
+        releaseName: service
+        valuesFile: service.yaml
   template:
     metadata:
-      name: 'env2-non-prod-qa-{{ .name }}'
+      name: environment-{{ .name }}
     spec:
       project: default
       source:
@@ -24,13 +25,13 @@ spec:
         helm:
           releaseName: '{{ .releaseName }}'
           valueFiles:
-            - '../../env2-non-prod/qa/values/{{ .valuesFile }}'
+          - ../../ENVIRONMENT/STAGE/values/{{ .valuesFile }}
       destination:
         server: https://kubernetes.default.svc
-        namespace: env2-non-prod-qa
+        namespace: environment
       syncPolicy:
         automated:
           prune: true
           selfHeal: true
         syncOptions:
-          - CreateNamespace=true
+        - CreateNamespace=true

@@ -1,4 +1,0 @@
-replicaCount: 2
-aspnetcoreEnvironment: Production
-env:
-  APP_ENVIRONMENT: env1-prod-preprod

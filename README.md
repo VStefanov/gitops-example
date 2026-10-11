@@ -11,28 +11,37 @@ charts/
   service/
   common-concerns/
   storybook/
+argocd/
+  base/
+    kustomization.yaml
+    applications.yaml
+    argo-common-concerns.yaml
+    argo-storybook.yaml
 env1-non-prod/
   qa/
+    kustomization.yaml
+    values/
   preprod/
 env1-prod/
-  qa/
-  preprod/
+  prod/
 env2-non-prod/
   qa/
   preprod/
 env2-prod/
-  qa/
-  preprod/
+  prod/
 ```
 
-Each chart includes `Chart.yaml`, `values.yaml`, and templates. Every environment/stage folder contains:
+Each chart includes `Chart.yaml`, `values.yaml`, and templates. The shared `argocd/base` contains:
 
 - `applications.yaml`: an ApplicationSet with a list generator that deploys the service chart.
 - `argo-common-concerns.yaml`: an Application for the common-concerns chart.
 - `argo-storybook.yaml`: an Application for the storybook chart.
-- `values/service.yaml`, `values/common-concerns.yaml`, and `values/storybook.yaml`: environment overrides.
 
-The requested qa/preprod pattern also appears under prod. All eight combinations target the same local cluster, using separate namespaces such as `env1-non-prod-qa`. Non-prod uses one replica; prod uses two. These folders are examples, not a complete production cluster configuration.
+Every environment/stage folder contains a `kustomization.yaml` overlay and `values/service.yaml`, `values/common-concerns.yaml`, and `values/storybook.yaml`. Overlays reuse the base and set only the resource name prefix, destination namespace, generated service Application name, and Helm values paths. Repository URL, revision, chart paths, generators, and sync policy are defined once in the base.
+
+[Kustomize](https://kubernetes.io/docs/tasks/manage-kubernetes-objects/kustomization/) assembles the Argo CD resources; Argo CD still uses Helm to render each .NET workload. Kustomize is bundled with kubectl; these overlays were verified with Kustomize v5.7.1 in kubectl v1.34.1.
+
+Non-prod environments each contain `qa` and `preprod`; production environments each contain only `prod`. All six combinations target the same local cluster, using separate namespaces such as `env1-non-prod-qa` and `env1-prod-prod`. Non-prod uses one replica; prod uses two. These folders are examples, not a complete production cluster configuration.
 
 ## Prerequisites
 
@@ -144,12 +153,12 @@ An HTTP response without a certificate validation error confirms the TLS connect
 
 ## 3. Publish the repository
 
-Argo CD reads Git from inside Kubernetes; it cannot read this local Windows folder. Every manifest points to `https://github.com/VStefanov/gitops-example.git` and branch `main`, based on this repository's origin. If you use another repository or branch, edit `repoURL` and `targetRevision` in all 24 Argo CD manifests first.
+Argo CD reads Git from inside Kubernetes; it cannot read this local Windows folder. The three shared manifests in `argocd/base` point to `https://github.com/VStefanov/gitops-example.git` and branch `main`, based on this repository's origin. If you use another repository or branch, edit `repoURL` and `targetRevision` in those three base files; all six overlays inherit them.
 
 Commit and push the files to that repository:
 
 ```powershell
-git add README.md charts env1-non-prod env1-prod env2-non-prod env2-prod
+git add README.md charts argocd env1-non-prod env1-prod env2-non-prod env2-prod
 git commit -m "Add local Argo CD example and .NET Helm charts"
 git push -u origin main
 ```
@@ -160,7 +169,7 @@ For a private repository, use **Settings > Repositories > Connect Repo** in the 
 
 ### Connect this repository over SSH instead
 
-The current manifests use HTTPS. If you prefer SSH, configure the SSH repository and change every manifest's `repoURL` to `git@github.com:VStefanov/gitops-example.git`. Credentials for an SSH URL do not authenticate the existing HTTPS URL. Alternatively, keep HTTPS and configure a GitHub token with read access in the UI.
+The current manifests use HTTPS. If you prefer SSH, configure the SSH repository and change `repoURL` in the three shared manifests under `argocd/base` to `git@github.com:VStefanov/gitops-example.git`. Credentials for an SSH URL do not authenticate the existing HTTPS URL. Alternatively, keep HTTPS and configure a GitHub token with read access in the UI.
 
 For SSH, create a dedicated deploy key outside the repository:
 
@@ -197,38 +206,43 @@ Use the actual connection error to choose the next step:
 Start with env1 non-prod qa:
 
 ```powershell
-kubectl apply -n argocd -f env1-non-prod/qa/applications.yaml
-kubectl apply -n argocd -f env1-non-prod/qa/argo-common-concerns.yaml
-kubectl apply -n argocd -f env1-non-prod/qa/argo-storybook.yaml
-
+kubectl kustomize env1-non-prod/qa
+kubectl apply -k env1-non-prod/qa
 kubectl get deployments,pods,services -n env1-non-prod-qa
 
-kubectl apply -n argocd -f env2-non-prod/qa/applications.yaml
-kubectl apply -n argocd -f env2-non-prod/qa/argo-common-concerns.yaml
-kubectl apply -n argocd -f env2-non-prod/qa/argo-storybook.yaml
-
+kubectl apply -k env2-non-prod/qa
 kubectl get deployments,pods,services -n env2-non-prod-qa
 
 kubectl get applicationsets,applications -n argocd
 ```
 
-The ApplicationSet creates `env1-non-prod-qa-service`; the other files create `env1-non-prod-qa-common-concerns` and `env1-non-prod-qa-storybook`. Argo CD creates the destination namespace and automatically syncs, prunes removed resources, and corrects drift. Initial reconciliation may take a few minutes.
+The overlay creates the ApplicationSet and both Applications in the `argocd` namespace. The ApplicationSet creates `env1-non-prod-qa-service`; the other resources are `env1-non-prod-qa-common-concerns` and `env1-non-prod-qa-storybook`. Argo CD creates the destination namespace and automatically syncs, prunes removed resources, and corrects drift. Initial reconciliation may take a few minutes.
 
-To apply all eight combinations explicitly:
+If you already applied the original files, run `kubectl apply -k` for those same environment folders. The rendered resource names and specifications are preserved, so this updates the existing resources in place. No deletion or recreation is required.
+
+Production uses these overlays:
+
+```powershell
+kubectl apply -k env1-prod/prod
+kubectl apply -k env2-prod/prod
+```
+
+Production resources now use names such as `env1-prod-prod-services` and destination namespace `env1-prod-prod`. If you previously deployed the old production qa/preprod overlays, their resources remain in Kubernetes until you explicitly remove them; applying the new prod overlay creates a separate set of applications. Confirm the new production applications are healthy before retiring the old ones.
+
+To apply all six combinations explicitly:
 
 ```powershell
 foreach ($environment in @('env1-non-prod', 'env1-prod', 'env2-non-prod', 'env2-prod')) {
-    foreach ($stage in @('qa', 'preprod')) {
-        kubectl apply -n argocd -f "$environment/$stage/applications.yaml"
-        kubectl apply -n argocd -f "$environment/$stage/argo-common-concerns.yaml"
-        kubectl apply -n argocd -f "$environment/$stage/argo-storybook.yaml"
+    $stages = if ($environment -like '*-non-prod') { @('qa', 'preprod') } else { @('prod') }
+    foreach ($stage in $stages) {
+        kubectl apply -k "$environment/$stage"
     }
 }
 ```
 
-Apply only the three Argo files, rather than recursively applying directories that also contain Helm values.
+Use `-k` on an environment/stage folder so kubectl builds its overlay. Do not apply the base directly: its environment fields are placeholders resolved by overlays. Helm values files are read by Argo CD, not applied as Kubernetes resources.
 
-Chart and values changes take effect after committing and pushing. Changes to these top-level Application/ApplicationSet manifests require `kubectl apply` again; this example does not include a parent application to reconcile them.
+Chart and values changes take effect after committing and pushing. Changes to the shared base or an overlay require `kubectl apply -k` again for each affected environment; this example does not include a parent application to reconcile them.
 
 ## 5. Access the .NET workloads
 
@@ -260,7 +274,9 @@ Set `imagePullSecrets` to reference a registry Secret already created in each de
 
 TCP startup, readiness, and liveness probes are provided so the sample does not require a particular health route. Replace them with application-specific HTTP health checks as needed. Set a probe to `{}` to disable it.
 
-To deploy another service from the same chart, add a distinct `name`, `releaseName`, and `valuesFile` to the ApplicationSet's list and create its values file. Unique release names keep Deployments and Services distinct within the namespace. See the [ApplicationSet list generator](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-List/) and [Argo CD Helm values](https://argo-cd.readthedocs.io/en/stable/user-guide/helm/) documentation.
+To deploy another service from the same chart in all environments, add a distinct `name`, `releaseName`, and `valuesFile` to the list in `argocd/base/applications.yaml` and create its values file in each environment. Unique release names keep Deployments and Services distinct within the namespace. Apply the affected overlays again. See the [ApplicationSet list generator](https://argo-cd.readthedocs.io/en/stable/operator-manual/applicationset/Generators-List/) and [Argo CD Helm values](https://argo-cd.readthedocs.io/en/stable/user-guide/helm/) documentation.
+
+To add another environment, copy an existing stage folder with its values, then edit `namePrefix` and the small patches in its `kustomization.yaml`: set its destination namespaces, ApplicationSet template name, and values paths. Update `APP_ENVIRONMENT` in the values files. Render with `kubectl kustomize <environment>/<stage>` before applying.
 
 ## Validate locally
 
@@ -271,12 +287,21 @@ foreach ($chart in @('service', 'common-concerns', 'storybook')) {
 }
 ```
 
-To check the Argo resources against an installed cluster's CRDs:
+To render every overlay locally without contacting Kubernetes:
 
 ```powershell
-kubectl apply --dry-run=server -n argocd -f env1-non-prod/qa/applications.yaml
-kubectl apply --dry-run=server -n argocd -f env1-non-prod/qa/argo-common-concerns.yaml
-kubectl apply --dry-run=server -n argocd -f env1-non-prod/qa/argo-storybook.yaml
+foreach ($environment in @('env1-non-prod', 'env1-prod', 'env2-non-prod', 'env2-prod')) {
+    $stages = if ($environment -like '*-non-prod') { @('qa', 'preprod') } else { @('prod') }
+    foreach ($stage in $stages) {
+        kubectl kustomize "$environment/$stage"
+    }
+}
+```
+
+To check an overlay's Argo resources against an installed cluster's CRDs:
+
+```powershell
+kubectl apply --dry-run=server -k env1-non-prod/qa
 ```
 
 ## Troubleshooting and cleanup

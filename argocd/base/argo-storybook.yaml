@@ -1,24 +1,24 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: env2-prod-preprod-common-concerns
+  name: storybook
   namespace: argocd
 spec:
   project: default
   source:
     repoURL: https://github.com/VStefanov/gitops-example.git
     targetRevision: main
-    path: charts/common-concerns
+    path: charts/storybook
     helm:
-      releaseName: common-concerns
+      releaseName: storybook
       valueFiles:
-        - ../../env2-prod/preprod/values/common-concerns.yaml
+      - ../../ENVIRONMENT/STAGE/values/storybook.yaml
   destination:
     server: https://kubernetes.default.svc
-    namespace: env2-prod-preprod
+    namespace: environment
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
-      - CreateNamespace=true
+    - CreateNamespace=true

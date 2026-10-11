@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: env1-prod-qa-common-concerns
+  name: common-concerns
   namespace: argocd
 spec:
   project: default
@@ -12,13 +12,13 @@ spec:
     helm:
       releaseName: common-concerns
       valueFiles:
-        - ../../env1-prod/qa/values/common-concerns.yaml
+      - ../../ENVIRONMENT/STAGE/values/common-concerns.yaml
   destination:
     server: https://kubernetes.default.svc
-    namespace: env1-prod-qa
+    namespace: environment
   syncPolicy:
     automated:
       prune: true
       selfHeal: true
     syncOptions:
-      - CreateNamespace=true
+    - CreateNamespace=true
