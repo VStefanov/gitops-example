@@ -1,0 +1,46 @@
+PROS
+
+1. Less duplication
+   The ApplicationSet and two Applications live once in argocd/base,
+   instead of being copied into all six environments.
+
+2. Consistent configuration
+   Changes to common settings, such as sync policy or chart configuration,
+   can be made in one place.
+
+3. Independent deployments
+   Each environment has its own overlay and Helm values, so QA can use
+   a newer container version while preprod and prod stay unchanged.
+
+4. Clear separation
+   The base contains common definitions; overlays contain environment
+   differences; Helm values contain application settings.
+
+5. Preview before applying
+   kubectl kustomize environments/demo1/qa shows the complete generated
+   manifests before deployment. Run this command from the repository root.
+
+CONS
+
+1. Some repetition remains
+   The six overlays still repeat patches for names, namespaces, and values
+   paths. Kustomize reduces duplication but does not provide general
+   template parameters.
+
+2. More files to follow
+   To understand one deployment, you must read the shared base,
+   the environment overlay, and the Helm values.
+
+3. Shared changes affect multiple environments
+   A base change can affect every environment when its overlay is next
+   applied. Review the rendered output for all affected environments.
+
+4. Patches need maintenance
+   Renaming a base resource or changing its structure can require updates
+   to several overlays.
+
+5. Applying overlays remains a separate step
+   In the current setup, committing an overlay change does not automatically
+   update the Argo CD Application definitions. You still need to apply
+   that overlay.
+
